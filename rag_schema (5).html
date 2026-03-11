@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Chatbot – Schéma pipeline</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0f14; --surface: #13161e; --border: #1e2330;
+    --ingest: #1a73e8; --chat: #00b894; --infra: #f59e0b;
+    --fastapi: #e879f9; --sql: #fb923c; --orch: #38bdf8;
+    --ollama: #4ade80; --text: #e8eaf0; --muted: #7b8098; --badge-bg: #1e2330;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-weight: 300; min-height: 100vh; padding: 48px 24px 80px; }
+
+  .page-header { text-align: center; margin-bottom: 56px; }
+  .page-header h1 { font-family: 'Syne', sans-serif; font-weight: 800; font-size: clamp(24px, 4vw, 44px); letter-spacing: -1px; background: linear-gradient(135deg, #e8eaf0 30%, #7b8098); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 10px; }
+  .page-header p { color: var(--muted); font-size: 14px; letter-spacing: .5px; }
+  .page-header .local-badge { display: inline-flex; align-items: center; gap: 7px; margin-top: 10px; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--ollama); background: rgba(74,222,128,.08); border: 1px solid rgba(74,222,128,.3); border-radius: 20px; padding: 4px 14px; }
+
+  .wrap { max-width: 1160px; margin: 0 auto; }
+
+  .sec-title { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding-bottom: 13px; border-bottom: 1px solid var(--border); }
+  .sec-title .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .sec-title h2 { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; }
+  .sec-title .sub { font-size: 11px; color: var(--muted); margin-left: auto; white-space: nowrap; }
+
+  /* INFRA */
+  .infra-grid { display: grid; gap: 11px; margin-bottom: 52px; }
+  .infra-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 14px; opacity: 0; transform: translateY(12px); transition: opacity .4s ease, transform .4s ease, border-color .2s; }
+  .infra-card.visible { opacity: 1; transform: none; }
+  .infra-card:hover { border-color: rgba(245,158,11,.4); }
+  .infra-icon { font-size: 19px; margin-bottom: 7px; }
+  .infra-name { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; color: var(--infra); margin-bottom: 3px; }
+  .infra-tool { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+  .infra-port { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--infra); background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.25); border-radius: 4px; padding: 2px 7px; display: inline-block; margin-bottom: 7px; }
+  .infra-desc { font-size: 11.5px; color: #7b8098; line-height: 1.5; margin-bottom: 9px; }
+  .infra-order { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--infra); background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.2); border-radius: 4px; padding: 2px 8px; display: inline-block; margin-top: 6px; }
+  .infra-order.warn { color: #0d0f14; background: var(--infra); border-color: var(--infra); font-weight: 600; }
+  .infra-order.iter2 { color: #818cf8; background: rgba(129,140,248,.08); border-color: rgba(129,140,248,.3); }
+
+  /* OLLAMA CARD */
+  .ollama-card { background: var(--surface); border: 1.5px solid rgba(74,222,128,.3); border-radius: 10px; padding: 13px 14px; opacity: 0; transform: translateY(12px); transition: opacity .4s ease, transform .4s ease, border-color .2s; }
+  .ollama-card.visible { opacity: 1; transform: none; }
+  .ollama-card:hover { border-color: rgba(74,222,128,.6); }
+  .ollama-card .infra-name { color: var(--ollama); }
+  .ollama-card .infra-port { color: var(--ollama); background: rgba(74,222,128,.08); border-color: rgba(74,222,128,.25); }
+  .ollama-card .infra-order { color: var(--ollama); background: rgba(74,222,128,.08); border-color: rgba(74,222,128,.25); }
+
+  /* LIBS TAGS */
+  .libs-row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .lib-tag { font-family: 'DM Mono', monospace; font-size: 10px; padding: 2px 7px; border-radius: 4px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); color: #c8cfe0; white-space: nowrap; }
+  .lib-tag.sw  { color: #fbbf24; border-color: rgba(251,191,36,.3);  background: rgba(251,191,36,.07); }
+  .lib-tag.local { color: var(--ollama); border-color: rgba(74,222,128,.3); background: rgba(74,222,128,.07); }
+  .lib-tag.sql { color: var(--sql); border-color: rgba(251,146,60,.3); background: rgba(251,146,60,.07); }
+
+  /* PIPELINE */
+  .pipeline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; margin-bottom: 52px; }
+  .col-header { display: flex; align-items: center; gap: 11px; margin-bottom: 18px; padding-bottom: 13px; border-bottom: 1px solid var(--border); }
+  .col-header .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .col-header h2 { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; }
+  .col-header .sub { font-size: 11px; color: var(--muted); margin-left: auto; }
+  .col-ingest .col-header .dot { background: var(--ingest); box-shadow: 0 0 8px var(--ingest); }
+  .col-ingest .col-header h2 { color: var(--ingest); }
+  .col-chat .col-header .dot   { background: var(--chat); box-shadow: 0 0 8px var(--chat); }
+  .col-chat .col-header h2     { color: var(--chat); }
+
+  /* GATEWAY */
+  .gateway-card { background: var(--surface); border: 1.5px solid rgba(232,121,249,.35); border-radius: 10px; padding: 11px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 11px; opacity: 0; transform: translateY(10px); transition: opacity .4s ease, transform .4s ease, border-color .2s; }
+  .gateway-card.visible { opacity: 1; transform: none; }
+  .gateway-card:hover { border-color: rgba(232,121,249,.65); }
+  .gateway-icon { font-size: 19px; flex-shrink: 0; }
+  .gateway-body { flex: 1; }
+  .gateway-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12.5px; color: var(--fastapi); margin-bottom: 3px; }
+  .gateway-desc { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+  .gateway-arrow { font-size: 17px; color: rgba(232,121,249,.45); font-family: 'DM Mono', monospace; }
+
+  /* ORCHESTRATOR */
+  .orch-wrapper { border: 1.5px dashed rgba(56,189,248,.28); border-radius: 12px; padding: 14px 10px 6px; position: relative; margin-top: 4px; }
+  .orch-label { position: absolute; top: -11px; left: 14px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--orch); background: var(--bg); padding: 0 8px; border: 1px solid rgba(56,189,248,.28); border-radius: 4px; white-space: nowrap; }
+
+  /* STEPS */
+  .steps { display: flex; flex-direction: column; gap: 0; }
+  .step { display: grid; grid-template-columns: 42px 1fr; gap: 0 11px; position: relative; opacity: 0; transform: translateY(13px); transition: opacity .4s ease, transform .4s ease; }
+  .step.visible { opacity: 1; transform: none; }
+  .step:not(:last-child) .num::after { content: ''; position: absolute; top: 40px; left: 20px; width: 2px; height: calc(100% - 10px); background: linear-gradient(to bottom, #1e2330, transparent); }
+  .num { position: relative; display: flex; flex-direction: column; align-items: center; padding-top: 2px; }
+  .num-circle { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500; flex-shrink: 0; border: 1.5px solid; z-index: 1; }
+  .col-ingest .num-circle { border-color: var(--ingest); color: var(--ingest); background: rgba(26,115,232,.08); }
+  .col-chat   .num-circle { border-color: var(--chat);   color: var(--chat);   background: rgba(0,184,148,.08); }
+
+  /* CARD */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px 12px; margin-bottom: 8px; transition: border-color .2s, transform .2s; cursor: default; }
+  .card:hover { transform: translateX(3px); }
+  .col-ingest .card:hover { border-color: rgba(26,115,232,.4); }
+  .col-chat   .card:hover { border-color: rgba(0,184,148,.4); }
+  .card-top { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 6px; }
+  .card-icon { font-size: 16px; line-height: 1; flex-shrink: 0; margin-top: 1px; }
+  .card-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; color: var(--text); line-height: 1.3; }
+  .card-badge { margin-left: auto; font-family: 'DM Mono', monospace; font-size: 9.5px; color: var(--muted); background: var(--badge-bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; white-space: nowrap; flex-shrink: 0; }
+  .card-badge.ext { color: #a8ff78; border-color: rgba(168,255,120,.25); background: rgba(168,255,120,.06); }
+  .card-badge.sql { color: var(--sql); border-color: rgba(251,146,60,.3); background: rgba(251,146,60,.07); }
+  .card-desc { font-size: 11.5px; color: #9ba3ba; line-height: 1.55; margin-bottom: 8px; }
+
+  .io-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .io-chip { font-size: 10px; font-family: 'DM Mono', monospace; padding: 2px 8px; border-radius: 20px; display: flex; align-items: center; gap: 4px; }
+  .io-chip.inp { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); color: var(--muted); }
+  .io-chip.out { border: 1px solid; font-weight: 500; }
+  .col-ingest .io-chip.out { color: var(--ingest); border-color: rgba(26,115,232,.35); background: rgba(26,115,232,.06); }
+  .col-chat   .io-chip.out { color: var(--chat);   border-color: rgba(0,184,148,.35);  background: rgba(0,184,148,.06); }
+
+  /* SQL */
+  .sql-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 52px; }
+  .sql-card { background: var(--surface); border: 1px solid rgba(251,146,60,.25); border-radius: 10px; padding: 14px 15px; opacity: 0; transform: translateY(12px); transition: opacity .4s ease, transform .4s ease, border-color .2s; }
+  .sql-card.visible { opacity: 1; transform: none; }
+  .sql-card:hover { border-color: rgba(251,146,60,.5); }
+  .sql-card-icon { font-size: 20px; margin-bottom: 8px; }
+  .sql-card-name { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; color: var(--sql); margin-bottom: 5px; }
+  .sql-card-desc { font-size: 11.5px; color: #7b8098; line-height: 1.5; margin-bottom: 10px; }
+  .sql-field { font-family: 'DM Mono', monospace; font-size: 10.5px; color: #9ba3ba; padding: 3px 8px; background: rgba(255,255,255,.03); border-radius: 4px; border-left: 2px solid rgba(251,146,60,.4); margin-bottom: 4px; }
+
+  /* LEGEND */
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 14px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .legend-sep { width: 1px; background: var(--border); height: 14px; }
+  .ltag { font-family: 'DM Mono', monospace; font-size: 9.5px; padding: 2px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>RAG Chatbot – Schéma pipeline</h1>
+  <p>Kompletní postup krok po kroku · od SharePointu k odpovědi uživatele</p>
+  <div class="local-badge">🔒 100% lokální provoz — žádná data neopouštějí firmu · Ollama + pymupdf4llm</div>
+</div>
+
+<div class="wrap">
+
+<!-- ══════════════════════════════════
+     FÁZE 0 — INFRASTRUKTURA
+══════════════════════════════════ -->
+<div class="sec-title">
+  <div class="dot" style="background:var(--infra);box-shadow:0 0 8px var(--infra);"></div>
+  <h2 style="color:var(--infra);">Fáze 0 — Infrastruktura &amp; Software</h2>
+  <span class="sub">Nainstalovat a spustit jako první — ještě před psaním jakéhokoliv kódu</span>
+</div>
+
+<div class="infra-grid" style="grid-template-columns:repeat(6,1fr);">
+
+  <div class="infra-card" style="border-color:rgba(245,158,11,.45);">
+    <div class="infra-icon">🐳</div>
+    <div class="infra-name">Docker Desktop</div>
+    <div class="infra-tool">stáhnout z docker.com</div>
+    <div class="infra-desc">Spouští Qdrant a Redis v izolovaných kontejnerech. Funguje stejně na Windows, Mac i Linux. Nasazení na server = zkopírovat jeden soubor docker-compose.yml.</div>
+    <div class="libs-row"><span class="lib-tag sw">Docker Desktop</span><span class="lib-tag">docker-compose.yml</span></div>
+    <div class="infra-order warn">⚠ nainstalovat úplně první</div>
+  </div>
+
+  <div class="infra-card">
+    <div class="infra-icon">🗄️</div>
+    <div class="infra-name">Qdrant</div>
+    <div class="infra-tool">docker compose up -d</div>
+    <div class="infra-port">localhost:6333</div>
+    <div class="infra-desc">Vektorová databáze. Ukládá embeddingy + metadata. Port 6333 = číslo dveří přes která Python posílá a hledá data.</div>
+    <div class="libs-row"><span class="lib-tag sw">Docker Desktop</span><span class="lib-tag">qdrant/qdrant:latest</span><span class="lib-tag">qdrant-client</span><span class="lib-tag">langchain-qdrant</span></div>
+    <div class="infra-order">spustit 1. (přes Docker)</div>
+  </div>
+
+  <div class="infra-card">
+    <div class="infra-icon">📋</div>
+    <div class="infra-name">Redis</div>
+    <div class="infra-tool">docker compose up -d</div>
+    <div class="infra-port">localhost:6379</div>
+    <div class="infra-desc">Fronta zpráv pro Celery. Nástěnka — FastAPI sem zapíše úkol ingestu, Celery si ho odtud vyzvedne. Port 6379 = adresa nástěnky.</div>
+    <div class="libs-row"><span class="lib-tag sw">Docker Desktop</span><span class="lib-tag">redis:7</span><span class="lib-tag">redis</span><span class="lib-tag">celery</span></div>
+    <div class="infra-order">spustit 1. (přes Docker)</div>
+  </div>
+
+  <div class="ollama-card">
+    <div class="infra-icon">🦙</div>
+    <div class="infra-name">Ollama</div>
+    <div class="infra-tool">winget install Ollama.Ollama</div>
+    <div class="infra-port">localhost:11434</div>
+    <div class="infra-desc">Spouští AI modely lokálně. Data neopustí firmu vůbec — žádné API, žádné poplatky. Jako Docker, ale pro AI modely. Po instalaci stáhneš model jedním příkazem.</div>
+    <div class="libs-row"><span class="lib-tag sw">Ollama</span><span class="lib-tag local">ollama pull mistral</span><span class="lib-tag local">ollama pull nomic-embed-text</span><span class="lib-tag">langchain-ollama</span></div>
+    <div class="infra-order" style="color:var(--ollama);background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.25);">spustit 2. · ollama serve</div>
+  </div>
+
+  <div class="infra-card">
+    <div class="infra-icon">⚡</div>
+    <div class="infra-name">FastAPI server</div>
+    <div class="infra-tool">uvicorn app.main:app --reload</div>
+    <div class="infra-desc">Vstupní brána pro obě pipeline. Přijímá /ingest/sync (admin) i /chat (uživatel). Vyžaduje Python, VS Code a Git nainstalované v systému.</div>
+    <div class="libs-row"><span class="lib-tag sw">Python 3.11+</span><span class="lib-tag sw">VS Code</span><span class="lib-tag sw">Git</span><span class="lib-tag">fastapi</span><span class="lib-tag">uvicorn</span><span class="lib-tag">pydantic</span><span class="lib-tag">python-dotenv</span></div>
+    <div class="infra-order">spustit 3.</div>
+  </div>
+
+  <div class="infra-card">
+    <div class="infra-icon">🔧</div>
+    <div class="infra-name">Celery Worker</div>
+    <div class="infra-tool">celery -A app.core.celery_app worker</div>
+    <div class="infra-desc">Python proces ve zvláštním terminálu. Čeká na Redis, vyzvedne úlohu ingestu a zpracuje PDF na pozadí — FastAPI mezitím neblokuje.</div>
+    <div class="libs-row"><span class="lib-tag">celery</span><span class="lib-tag">redis (broker)</span></div>
+    <div class="infra-order">spustit 4. (zvl. terminál)</div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════
+     OLLAMA — MODELY
+══════════════════════════════════ -->
+<div class="sec-title">
+  <div class="dot" style="background:var(--ollama);box-shadow:0 0 8px var(--ollama);"></div>
+  <h2 style="color:var(--ollama);">Ollama — Lokální modely</h2>
+  <span class="sub">Všechny modely běží na firemním serveru · žádná data neodcházejí · žádné API poplatky</span>
+</div>
+
+<div class="infra-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:52px;">
+
+  <div class="ollama-card">
+    <div class="infra-icon">🤖</div>
+    <div class="infra-name">Mistral 7B — hlavní model</div>
+    <div class="infra-tool">ollama pull mistral</div>
+    <div class="infra-desc">Generuje odpovědi uživatelům, vytahuje metadata z dokumentů, píše shrnutí. Vyžaduje GPU s 8GB VRAM (RTX 3070) nebo běží pomaleji na CPU.</div>
+    <div class="libs-row"><span class="lib-tag local">mistral:latest</span><span class="lib-tag">langchain-ollama</span><span class="lib-tag">ChatOllama</span></div>
+    <div class="infra-order" style="color:var(--ollama);background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.25);">GPU 8GB VRAM (doporučeno)</div>
+  </div>
+
+  <div class="ollama-card">
+    <div class="infra-icon">🔢</div>
+    <div class="infra-name">nomic-embed-text — embeddingy</div>
+    <div class="infra-tool">ollama pull nomic-embed-text</div>
+    <div class="infra-desc">Převádí text na vektory čísel — musí být použit stejný model při ingestu i při dotazech. Specializovaný embedding model, lehčí než Mistral 7B.</div>
+    <div class="libs-row"><span class="lib-tag local">nomic-embed-text</span><span class="lib-tag">langchain-ollama</span><span class="lib-tag">OllamaEmbeddings</span></div>
+    <div class="infra-order" style="color:var(--ollama);background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.25);">CPU stačí · nenáročný</div>
+  </div>
+
+  <div class="ollama-card">
+    <div class="infra-icon">🚀</div>
+    <div class="infra-name">Mixtral 8x7B — upgrade</div>
+    <div class="infra-tool">ollama pull mixtral</div>
+    <div class="infra-desc">Silnější model pro lepší češtinu a složitější dotazy. Výměna = změna jednoho řádku kódu díky LangChain. Vyžaduje více výkonu.</div>
+    <div class="libs-row"><span class="lib-tag local">mixtral:latest</span><span class="lib-tag">langchain-ollama</span><span class="lib-tag">ChatOllama</span></div>
+    <div class="infra-order" style="color:var(--ollama);background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.25);">GPU 24GB VRAM · 2. iterace</div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════
+     PIPELINE GRID
+══════════════════════════════════ -->
+<div class="pipeline-grid">
+
+  <!-- INGEST -->
+  <div class="col col-ingest">
+    <div class="col-header">
+      <div class="dot"></div>
+      <h2>Ingest Pipeline</h2>
+      <span class="sub">Běží na pozadí · admin spouští</span>
+    </div>
+
+    <div class="gateway-card" id="gw-ingest">
+      <div class="gateway-icon">⚡</div>
+      <div class="gateway-body">
+        <div class="gateway-title">FastAPI — endpoint /ingest/sync</div>
+        <div class="gateway-desc">Admin zavolá endpoint → FastAPI zapíše úlohu do Redisu → Celery ji vyzvedne a spustí pipeline na pozadí → FastAPI okamžitě vrátí "spuštěno".</div>
+        <div class="libs-row" style="margin-top:6px;margin-bottom:0;"><span class="lib-tag">fastapi</span><span class="lib-tag">celery</span><span class="lib-tag">redis</span></div>
+      </div>
+      <div class="gateway-arrow">↓</div>
+    </div>
+
+    <div class="orch-wrapper">
+      <div class="orch-label">ingest.py — orchestrátor · volá kroky 01–09 v pořadí, předává výstupy</div>
+      <div class="steps" id="ingest-steps">
+
+        <div class="step">
+          <div class="num"><div class="num-circle">01</div></div>
+          <div class="card">
+            <div class="card-top"><div class="card-icon">📁</div><div class="card-title">SharePoint Connector</div><div class="card-badge">sharepoint.py</div></div>
+            <div class="card-desc">Připojí se na SharePoint REST API, projde složky. Porovná datum modifikace + SHA-256 hash (jedinečný otisk obsahu — pokud se hash nezměnil, soubor je identický). Stáhne pouze nové nebo změněné PDF do data/raw/.</div>
+            <div class="libs-row"><span class="lib-tag">office365-rest-python-client</span><span class="lib-tag">requests</span><span class="lib-tag">hashlib (stdlib)</span><span class="lib-tag">os (stdlib)</span></div>
+            <div class="io-row"><div class="io-chip inp">↓ přihlašovací údaje z .env</div><div class="io-chip out">↑ PDF soubory v data/raw/</div></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num"><div class="num-circle">02</div></div>
+          <div class="card">
+            <div class="card-top"><div class="card-icon">📄</div><div class="card-title">PDF Parser</div><div class="card-badge">pdf_parser.py</div></div>
+            <div class="card-desc">Převede PDF na čistý Markdown lokálně — žádná data neodcházejí. pymupdf4llm zachovává tabulky, nadpisy a strukturu stejně jako LlamaParse, ale běží 100% offline. Proč ne OCR? Směrnice jsou digitální PDF, ne skeny — OCR je pro papírové dokumenty.</div>
+            <div class="libs-row"><span class="lib-tag local">pymupdf4llm (lokální)</span><span class="lib-tag">pip install pymupdf4llm</span></div>
+            <div class="io-row"><div class="io-chip inp">↓ PDF soubor</div><div class="io-chip out">↑ Markdown text</div></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num"><div class="num-circle">03</div></div>
+          <div class="card">
+            <div class="card-top"><div class="card-icon">🧹</div><div class="card-title">Text Cleaner</div><div class="card-badge">cleaner.py</div></div>
+            <div class="card-desc">RegEx vzory odstraní šum: záhlaví, zápatí, čísla stran, právní doložky. RegEx místo AI — deterministické, levné, rychlé, 100% předvídatelné. Žádná data neodcházejí.</div>
+            <div class="libs-row"><span class="lib-tag">re (stdlib — bez instalace)</span></div>
+            <div class="io-row"><div class="io-chip inp">↓ Markdown + šum</div><div class="io-chip out">↑ čistý text</div></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num"><div class="num-circle">04</div></div>
+          <div class="card">
+            <div class="card-top"><div class="card-icon">🏷️</div><div class="card-title">Metadata Agent</div><div class="card-badge">metadata_agent.py</div></div>
+            <div class="card-desc">Ollama (Mistral 7B) přečte začátek dokumentu a vytáhne: název, oddělení, platnost od/do, verze, pro koho platí. Výstup validuje Pydantic. Vše běží lokálně — žádná data neodcházejí.</div>
+            <div class="libs-row"><span class="lib-tag local">Ollama · mistral:latest</span><span class="lib-tag">langchain-ollama</span><span class="lib-tag">ChatOllama</span><span class="lib-tag">pydantic</span></div>
+            <div class="io-row"><div class="io-chip inp">↓ čistý text</div><div class="io-chip out">↑ JSON s metadaty</div></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num"><div class="num-circle">05</div></div>
+          <div class="card">
+            <div class="card-top"><div class="card-icon">📝</div><div class="card-title">Summary Agent</div><div class="card-badge">summary_agent.py</div></div>
+            <div class="card-desc">Ollama (Mistral 7B) vygeneruje 1–2 větné shrnutí dokumentu. Pomáhá rerankeru správně seřadit výsledky a uživateli pochopit z jakého dokumentu odpověď pochází. Lokálně.</div>
+            <div class="libs-row"><span class="lib-tag local">Ollama · mistral:latest</span><span class="lib-tag">langchain-ollama</span><span class="lib-tag">ChatOllama</span></div>
+            <div class="io-row"><div class="io-chip inp">↓ čistý text</div><div class="io-chip out">↑ shrnutí (1–2 věty)</div></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num"><div class="num-circle">06</div></div>
+          <div class="card">
+            <div class="card-top"><div class="card-icon">✂️</div><div class="card-title">Text Chunker</div><div class="card-badge">chunker.py</div></div>
+            <div class="card-desc">Rozdělí text na bloky ~1000 znaků s přesahem 150 znaků. Model nedokáže přečíst 100 stran najednou. Přesah zajistí, že žádná věta nebude rozseknuta bez kontextu.</div>
+            <div class="libs-row"><span class="lib-tag">langchain</span><span class="lib-tag">RecursiveCharacterTextSplitter</span></div>
+            <div class="io-row"><div class="io-chip inp">↓ čistý text</div><div class="io-chip out">↑ seznam chunků</div></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num"><div class="num-circle">07</div></div>
+          <div class="card">
+            <div class="card-top"><div class="card-icon">📦</div><div class="card-title">Document Builder</div><div class="card-badge">chunker.py</div></div>
+            <div class="card-desc">Každý chunk + metadata + shrnutí se zabalí do jednoho objektu. Metadata jsou přilepena k textu a cestují s ním až do Qdrantu a zpátky k uživateli jako citace.</div>
+            <div class="libs-row"><span class="lib-tag">langchain</span><span class="lib-tag">Document objekt</span></div>
+            <div class="io-row"><div class="io-chip inp">↓ chunk + metadata + shrnutí</div><div class="io-chip out">↑ Document objekt</div></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num"><div class="num-circle">08</div></div>
+          <div class="card">
+            <div class="card-top"><div class="card-icon">🔢</div><div class="card-title">Embedder</div><div class="card-badge">embedder.py</div></div>
+            <div class="card-desc">Převede text chunku na vektor čísel. Stejný model musí být použit i pro embeddingy dotazů — jiný model = jiná čísla = vyhledávání nefunguje. Kritické pravidlo. Vše lokálně.</div>
+            <div class="libs-row"><span class="lib-tag local">Ollama · nomic-embed-text</span><span class="lib-tag">langchain-ollama</span><span class="lib-tag">OllamaEmbeddings</span></div>
+            <div class="io-row"><div class="io-chip inp">↓ text chunku</div><div class="io-chip out">↑ vektor čísel</div></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num"><div class="num-circle">09</div></div>
+          <div class="card">
+            <div class="card-top"><div class="card-icon">💾</div><div class="card-title">Indexer → Qdrant</div><div class="card-badge">qdrant_store.py</div></div>
+            <div class="card-desc">Uloží balíček do Qdrantu: vektor + původní text + metadata. Qdrant je připraven odpovídat na dotazy v milisekundách. Zapíše záznam do SQLite (hash, datum, počet chunků).</div>
+            <div class="libs-row"><span class="lib-tag">qdrant-client</span><span class="lib-tag">langchain-qdrant</span><span class="lib-tag sql">sqlite3 (záznam dokumentu)</span></div>
+            <div class="io-row"><div class="io-chip inp">↓ vektor + Document</div><div class="io-chip out">↑ uloženo v Qdrantu + SQLite ✓</div></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAT -->
+  <div class="col col-chat">
+    <div class="col-header">
+      <div class="dot"></div>
+      <h2>Chat Pipeline</h2>
+      <span class="sub">Spouští se na každý dotaz uživatele</span>
+    </div>
+
+    <div class="gateway-card" id="gw-chat">
+      <div class="gateway-icon">⚡</div>
+      <div class="gateway-body">
+        <div class="gateway-title">FastAPI — endpoint /chat</div>
+        <div class="gateway-desc">Uživatel pošle dotaz → FastAPI ho přijme → synchronně spustí celou chat pipeline → vrátí odpověď přímo. Na rozdíl od ingestu zde Celery není — chat musí být rychlý.</div>
+        <div class="libs-row" style="margin-top:6px;margin-bottom:0;"><span class="lib-tag">fastapi</span><span class="lib-tag">uvicorn</span><span class="lib-tag">pydantic</span></div>
+      </div>
+      <div class="gateway-arrow">↓</div>
+    </div>
+
+    <div class="steps" id="chat-steps" style="margin-top:8px;">
+
+      <div class="step">
+        <div class="num"><div class="num-circle">01</div></div>
+        <div class="card">
+          <div class="card-top"><div class="card-icon">🔢</div><div class="card-title">Query Embedder</div><div class="card-badge">rag_chain.py</div></div>
+          <div class="card-desc">Otázka uživatele se převede na vektor — stejným modelem jako dokumenty při ingestu (nomic-embed-text). Jiný model = jiná čísla = nefunkční vyhledávání. Kritické pravidlo.</div>
+          <div class="libs-row"><span class="lib-tag local">Ollama · nomic-embed-text</span><span class="lib-tag">langchain-ollama</span><span class="lib-tag">OllamaEmbeddings</span></div>
+          <div class="io-row"><div class="io-chip inp">↓ text dotazu</div><div class="io-chip out">↑ vektor dotazu</div></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num"><div class="num-circle">02</div></div>
+        <div class="card">
+          <div class="card-top"><div class="card-icon">🔍</div><div class="card-title">Hybrid Retrieval</div><div class="card-badge ext">rozšíření · rag_chain.py</div></div>
+          <div class="card-desc">Kombinuje vektorové hledání (sémantika) + BM25 fulltext (přesná slova). Zachytí obecné dotazy i firemní zkratky (BOZP, TPP, §52). Filtruje i podle metadat. Qdrant běží lokálně.</div>
+          <div class="libs-row"><span class="lib-tag">qdrant-client</span><span class="lib-tag">langchain-qdrant</span><span class="lib-tag">BM25 + vector (nativní v Qdrantu)</span></div>
+          <div class="io-row"><div class="io-chip inp">↓ vektor + metadata filtr</div><div class="io-chip out">↑ top 10 chunků</div></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num"><div class="num-circle">03</div></div>
+        <div class="card">
+          <div class="card-top"><div class="card-icon">🎯</div><div class="card-title">Reranker</div><div class="card-badge ext">rozšíření · reranker.py</div></div>
+          <div class="card-desc">Projde 10 kandidátů a seřadí je podle skutečné relevance. Eliminuje falešně pozitivní výsledky. Open-source, běží 100% lokálně — žádná data neodcházejí, žádné poplatky.</div>
+          <div class="libs-row"><span class="lib-tag local">BGE-Reranker-v2-m3 (lokální)</span><span class="lib-tag">FlagEmbedding</span></div>
+          <div class="io-row"><div class="io-chip inp">↓ dotaz + 10 chunků</div><div class="io-chip out">↑ top 3–5 seřazených</div></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num"><div class="num-circle">04</div></div>
+        <div class="card">
+          <div class="card-top"><div class="card-icon">🤖</div><div class="card-title">Answer Agent</div><div class="card-badge">rag_chain.py</div></div>
+          <div class="card-desc">LangChain sestaví prompt: instrukce + nalezené pasáže + otázka. Striktní pokyn: odpovídej POUZE z dokumentů. Ollama zpracuje vše lokálně — žádné API, žádné poplatky, žádná data ven. Upgrade na Mixtral = změna jednoho řádku.</div>
+          <div class="libs-row"><span class="lib-tag local">Ollama · mistral:latest</span><span class="lib-tag local">upgrade: mixtral (2. iter.)</span><span class="lib-tag">langchain-ollama</span><span class="lib-tag">ChatOllama</span><span class="lib-tag">langchain</span></div>
+          <div class="io-row"><div class="io-chip inp">↓ dotaz + top chunky</div><div class="io-chip out">↑ text odpovědi</div></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num"><div class="num-circle">05</div></div>
+        <div class="card">
+          <div class="card-top"><div class="card-icon">📎</div><div class="card-title">Citation Builder</div><div class="card-badge">rag_chain.py</div></div>
+          <div class="card-desc">Z metadat uložených v chuncích sestaví seznam zdrojů — model je nevymýšlí, jsou přesné. Výsledek: „Zdroj: Smernice_HR_05.pdf, str. 12" s odkazem na SharePoint.</div>
+          <div class="libs-row"><span class="lib-tag">vlastní Python logika</span><span class="lib-tag">metadata z Qdrantu</span></div>
+          <div class="io-row"><div class="io-chip inp">↓ odpověď + metadata chunků</div><div class="io-chip out">↑ odpověď + citace zdrojů</div></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num"><div class="num-circle">06</div></div>
+        <div class="card">
+          <div class="card-top"><div class="card-icon">🧠</div><div class="card-title">Memory Manager</div><div class="card-badge ext">rozšíření · rag_chain.py</div></div>
+          <div class="card-desc">Uchová shrnutí předchozích zpráv. Uživatel se může doptat: „A platí to i pro mě?" Shrnutí místo celého textu — zabraňuje přetečení kontextu modelu.</div>
+          <div class="libs-row"><span class="lib-tag">langchain</span><span class="lib-tag">ConversationSummaryMemory</span></div>
+          <div class="io-row"><div class="io-chip inp">↓ dotaz + shrnutí historie</div><div class="io-chip out">↑ kontextová odpověď</div></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num"><div class="num-circle">07</div></div>
+        <div class="card">
+          <div class="card-top"><div class="card-icon">✅</div><div class="card-title">Odpověď uživateli + Audit log</div><div class="card-badge sql">SQLite</div></div>
+          <div class="card-desc">Uživatel dostane odpověď + klikatelné odkazy na SharePoint. Dotaz, odpověď, citované zdroje a hodnocení (👍/👎) se zapíší do SQLite pro pozdější analýzu.</div>
+          <div class="libs-row"><span class="lib-tag sql">sqlite3 (stdlib — bez instalace)</span><span class="lib-tag sql">audit_log.db</span></div>
+          <div class="io-row"><div class="io-chip inp">↓ finální odpověď</div><div class="io-chip out">↑ text + zdroje + zápis do SQLite ✓</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════
+     SQLITE
+══════════════════════════════════ -->
+<div class="sec-title">
+  <div class="dot" style="background:var(--sql);box-shadow:0 0 8px var(--sql);"></div>
+  <h2 style="color:var(--sql);">SQLite — Audit &amp; Logování</h2>
+  <span class="sub">sqlite3 je součástí Pythonu · žádná instalace · soubor audit_log.db vznikne automaticky v kořeni projektu</span>
+</div>
+
+<div class="sql-grid">
+  <div class="sql-card">
+    <div class="sql-card-icon">💬</div>
+    <div class="sql-card-name">Tabulka: dotazy</div>
+    <div class="sql-card-desc">Každý dotaz uživatele. Slouží pro analýzu co zaměstnanci hledají a ladění kvality odpovědí.</div>
+    <div class="sql-field">id · timestamp</div>
+    <div class="sql-field">text_dotazu</div>
+    <div class="sql-field">text_odpovedi</div>
+    <div class="sql-field">citovane_zdroje (JSON)</div>
+    <div class="sql-field">hodnoceni 👍 / 👎</div>
+    <div class="sql-field">oddeleni_uzivatele</div>
+    <div class="sql-field">doba_odpovedi_ms</div>
+  </div>
+  <div class="sql-card">
+    <div class="sql-card-icon">📄</div>
+    <div class="sql-card-name">Tabulka: dokumenty</div>
+    <div class="sql-card-desc">Každé zpracované PDF. Porovnání hashů při dalším ingestu — stáhni jen co se změnilo.</div>
+    <div class="sql-field">id · timestamp</div>
+    <div class="sql-field">nazev_souboru</div>
+    <div class="sql-field">sharepoint_url</div>
+    <div class="sql-field">sha256_hash</div>
+    <div class="sql-field">datum_modifikace</div>
+    <div class="sql-field">pocet_chunku</div>
+    <div class="sql-field">stav (OK / chyba)</div>
+  </div>
+  <div class="sql-card">
+    <div class="sql-card-icon">⚠️</div>
+    <div class="sql-card-name">Tabulka: chyby</div>
+    <div class="sql-card-desc">Každé selhání systému — Ollama nedostupná, Qdrant timeout, LlamaParse výpadek.</div>
+    <div class="sql-field">id · timestamp</div>
+    <div class="sql-field">typ_chyby</div>
+    <div class="sql-field">modul (kde nastala)</div>
+    <div class="sql-field">detail_chyby (traceback)</div>
+    <div class="sql-field">soubor / dotaz (kontext)</div>
+    <div class="sql-field">vyresen ANO / NE</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     PRŮŘEZOVÉ KOMPONENTY
+══════════════════════════════════ -->
+<div class="sec-title">
+  <div class="dot" style="background:#818cf8;box-shadow:0 0 8px #818cf8;"></div>
+  <h2 style="color:#818cf8;">Průřezové komponenty</h2>
+  <span class="sub">Platí pro celý systém — nejsou součástí jedné pipeline, chrání vše</span>
+</div>
+
+<div class="infra-grid" style="grid-template-columns:repeat(5,1fr);">
+
+  <div class="infra-card" style="border-color:rgba(129,140,248,.3);">
+    <div class="infra-icon">🔐</div>
+    <div class="infra-name" style="color:#818cf8;">Autentizace</div>
+    <div class="infra-tool">middleware v main.py</div>
+    <div class="infra-desc">Ověří kdo se ptá — filtrování směrnic podle oddělení (IT vidí jen IT směrnice) a zápis do SQLite kdo dotaz poslal. Bez toho je /chat otevřený pro kohokoliv.</div>
+    <div class="libs-row"><span class="lib-tag">python-jose</span><span class="lib-tag">passlib</span><span class="lib-tag">fastapi.security</span></div>
+    <div class="infra-order iter2">2. iterace</div>
+  </div>
+
+  <div class="infra-card" style="border-color:rgba(129,140,248,.3);">
+    <div class="infra-icon">✅</div>
+    <div class="infra-name" style="color:#818cf8;">.env Validace</div>
+    <div class="infra-tool">spouští se při startu app</div>
+    <div class="infra-desc">Při startu ověří že všechny hodnoty v .env jsou vyplněné (SharePoint přihlašovací údaje, URL Ollamy, URL Qdrantu). Bez toho systém nastartuje, první dotaz selže a chyba bude záhadná.</div>
+    <div class="libs-row"><span class="lib-tag">pydantic · BaseSettings</span><span class="lib-tag">python-dotenv</span></div>
+    <div class="infra-order warn" style="background:rgba(129,140,248,.3);border-color:#818cf8;color:#fff;">⚠ 1. iterace hned</div>
+  </div>
+
+  <div class="infra-card" style="border-color:rgba(129,140,248,.3);">
+    <div class="infra-icon">💓</div>
+    <div class="infra-name" style="color:#818cf8;">Health Check</div>
+    <div class="infra-tool">GET /health</div>
+    <div class="infra-desc">Endpoint který vrátí stav všech závislostí — Qdrant, Redis, Ollama. Bez toho nevíš jestli systém běží správně dokud nepřijde chyba od uživatele.</div>
+    <div class="libs-row"><span class="lib-tag">fastapi</span><span class="lib-tag">qdrant-client</span><span class="lib-tag">redis</span><span class="lib-tag">httpx</span></div>
+    <div class="infra-order iter2">2. iterace</div>
+  </div>
+
+  <div class="infra-card" style="border-color:rgba(129,140,248,.3);">
+    <div class="infra-icon">🚦</div>
+    <div class="infra-name" style="color:#818cf8;">Rate Limiting</div>
+    <div class="infra-tool">middleware v main.py</div>
+    <div class="infra-desc">Omezí kolik dotazů může jeden uživatel poslat za minutu. Zabrání zahltení Ollamy a GPU serveru — jeden uživatel nemůže zablokovat ostatní.</div>
+    <div class="libs-row"><span class="lib-tag">slowapi</span><span class="lib-tag">redis (počítadlo)</span></div>
+    <div class="infra-order iter2">2. iterace</div>
+  </div>
+
+  <div class="infra-card" style="border-color:rgba(129,140,248,.3);">
+    <div class="infra-icon">🛡️</div>
+    <div class="infra-name" style="color:#818cf8;">Fallback při výpadku</div>
+    <div class="infra-tool">try/except v rag_chain.py</div>
+    <div class="infra-desc">Když Ollama nebo Qdrant vypadnou, systém neselže s chybou — vrátí uživateli hezkou zprávu. Zapíše chybu do SQLite tabulky chyby.</div>
+    <div class="libs-row"><span class="lib-tag">try/except (stdlib)</span><span class="lib-tag sql">sqlite3 (zápis chyby)</span></div>
+    <div class="infra-order warn" style="background:rgba(129,140,248,.3);border-color:#818cf8;color:#fff;">⚠ 1. iterace hned</div>
+  </div>
+
+</div>
+
+<!-- LEGENDA -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--infra)"></div>Infrastruktura</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--ollama)"></div>Ollama — lokální modely</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--fastapi)"></div>FastAPI brána</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--orch)"></div>orchestrátor</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--ingest)"></div>Ingest Pipeline</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--chat)"></div>Chat Pipeline</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--sql)"></div>SQLite</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#818cf8"></div>Průřezové komponenty</div>
+  <div class="legend-sep"></div>
+  <div class="legend-item"><span class="ltag" style="color:#a8ff78;border:1px solid rgba(168,255,120,.25);background:rgba(168,255,120,.06);">rozšíření</span>2. iterace</div>
+  <div class="legend-sep"></div>
+  <div class="legend-item"><span class="ltag" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#c8cfe0;">pip knihovna</span></div>
+  <div class="legend-item"><span class="ltag" style="background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.3);color:#fbbf24;">SW / instalace</span></div>
+  <div class="legend-item"><span class="ltag" style="background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.3);color:#4ade80;">lokální model (Ollama)</span></div>
+  <div class="legend-item"><span class="ltag" style="background:rgba(251,146,60,.07);border:1px solid rgba(251,146,60,.3);color:#fb923c;">SQLite</span></div>
+</div>
+
+</div>
+
+<script>
+  function observe(selector, delay) {
+    const els = document.querySelectorAll(selector);
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          const idx = [...els].indexOf(e.target);
+          setTimeout(() => e.target.classList.add('visible'), idx * 65 + (delay||0));
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.05 });
+    els.forEach(el => io.observe(el));
+  }
+  observe('.infra-card', 0);
+  observe('.ollama-card', 0);
+  observe('.gateway-card', 100);
+  observe('#ingest-steps .step', 150);
+  observe('#chat-steps .step', 150);
+  observe('.sql-card', 100);
+</script>
+</body>
+</html>
